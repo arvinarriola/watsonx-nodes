@@ -1,0 +1,8 @@
+# Root-level nixpacks config — Railway reads this when root directory is not set to /backend
+# Pins Node 22 (required by @supabase/supabase-js v2.x)
+
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+[start]
+cmd = "node backend/src/index.js"

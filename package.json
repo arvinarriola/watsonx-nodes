@@ -1,0 +1,14 @@
+{
+  "name": "watsonx-nodes",
+  "version": "1.0.0",
+  "description": "WatsonX Nodes monorepo — backend service entry",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "start": "node backend/src/index.js",
+    "install:backend": "cd backend && npm install",
+    "install:frontend": "cd frontend && npm install"
+  },
+  "private": true
+}
