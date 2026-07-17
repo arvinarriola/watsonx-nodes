@@ -1,8 +1,8 @@
 # Railway uses Nixpacks to build the backend.
-# This file pins Node 20 and sets the start command.
+# Pins Node 22 (required by @supabase/supabase-js latest).
 
 [phases.setup]
-nixPkgs = ["nodejs_20"]
+nixPkgs = ["nodejs_22"]
 
 [start]
 cmd = "node src/index.js"
