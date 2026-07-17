@@ -3,18 +3,24 @@ import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 
+// User IDs are stored internally as userId@watsonxnodes.app
+const toEmail = (userId) => `${userId.trim().toLowerCase()}@watsonxnodes.app`;
+
 export default function Register() {
   const { register } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [form, setForm] = useState({ name: '', userId: '', password: '' });
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!form.userId.trim()) return toast.error('User ID is required');
+    if (!/^[a-zA-Z0-9_.-]+$/.test(form.userId))
+      return toast.error('User ID can only contain letters, numbers, underscores, dots, and hyphens');
     if (form.password.length < 6) return toast.error('Password must be at least 6 characters');
     setLoading(true);
     try {
-      await register(form.name, form.email, form.password);
+      await register(form.name, toEmail(form.userId), form.password);
       navigate('/dashboard');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Registration failed');
@@ -38,18 +44,19 @@ export default function Register() {
               value={form.name}
               onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Your name"
+              placeholder="Your full name"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">User ID</label>
             <input
-              type="email" required
-              value={form.email}
-              onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+              type="text" required
+              value={form.userId}
+              onChange={e => setForm(p => ({ ...p, userId: e.target.value }))}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="you@example.com"
+              placeholder="Choose a unique User ID"
             />
+            <p className="text-xs text-gray-400 mt-1">Letters, numbers, underscores, dots, hyphens only</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>

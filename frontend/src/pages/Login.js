@@ -3,17 +3,21 @@ import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 
+// User IDs are stored internally as userId@watsonxnodes.app
+const toEmail = (userId) => `${userId.trim().toLowerCase()}@watsonxnodes.app`;
+
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ email: '', password: '' });
+  const [form, setForm] = useState({ userId: '', password: '' });
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!form.userId.trim()) return toast.error('User ID is required');
     setLoading(true);
     try {
-      await login(form.email, form.password);
+      await login(toEmail(form.userId), form.password);
       navigate('/dashboard');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Login failed');
@@ -31,13 +35,13 @@ export default function Login() {
         </div>
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 flex flex-col gap-5">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">User ID</label>
             <input
-              type="email" required autoFocus
-              value={form.email}
-              onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+              type="text" required autoFocus
+              value={form.userId}
+              onChange={e => setForm(p => ({ ...p, userId: e.target.value }))}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="you@example.com"
+              placeholder="Enter your User ID"
             />
           </div>
           <div>
