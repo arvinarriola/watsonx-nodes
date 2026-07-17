@@ -14,7 +14,20 @@ require('./jobs/scheduler');
 
 const app = express();
 
-app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'https://watsonx-nodes-70wtnjyae-wxb1.vercel.app',
+  'http://localhost:3000',
+].filter(Boolean);
+
+app.use(cors({
+  origin: (origin, cb) => {
+    // allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS blocked: ${origin}`));
+  },
+  credentials: true,
+}));
 app.use(express.json());
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
