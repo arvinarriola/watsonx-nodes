@@ -16,7 +16,7 @@ const app = express();
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,
-  'https://watsonx-nodes-70wtnjyae-wxb1.vercel.app',
+  'https://watsonx-nodes.vercel.app',
   'http://localhost:3000',
 ].filter(Boolean);
 
