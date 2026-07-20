@@ -201,9 +201,38 @@ async function testWatson(req, res) {
 
 /**
  * POST /api/bot/chat  (authenticated)
- * In-app chat widget endpoint — browser → Watson → reply JSON.
+ * In-app chat widget — rule-based intent parser, no Watson console config needed.
  * Body: { message: string }
  */
+
+// ── Simple keyword intent detector ───────────────────────────────────────────
+function detectIntent(text) {
+  const t = text.toLowerCase();
+  if (/\b(help|what can you do|commands)\b/.test(t))                          return 'help';
+  if (/\b(subscri|following|my nodes)\b/.test(t))                             return 'list_subscriptions';
+  if (/\b(latest|recent|new|update|post)\b/.test(t))                          return 'latest_update';
+  if (/\b(unsub|stop alert|remove sub)\b/.test(t))                            return 'unsubscribe';
+  if (/\b(search|find|look(ing)? for|nodes about)\b/.test(t))                 return 'search_nodes';
+  if (/\b(create|make|new node|add node)\b/.test(t))                          return 'create_node';
+  return 'unknown';
+}
+
+// ── Extract a quoted or trailing phrase ───────────────────────────────────────
+// e.g. "latest update on Deadlines" → "Deadlines"
+//      "search for announcements"   → "announcements"
+function extractTopic(text) {
+  const quoted = text.match(/["']([^"']+)["']/);
+  if (quoted) return quoted[1].trim();
+  const patterns = [
+    /(?:on|for|about|called|named|from|in)\s+(.+)$/i,
+  ];
+  for (const p of patterns) {
+    const m = text.match(p);
+    if (m) return m[1].trim();
+  }
+  return null;
+}
+
 async function chatHandler(req, res) {
   const { message } = req.body;
   if (!message || typeof message !== 'string' || message.trim().length === 0)
@@ -211,14 +240,132 @@ async function chatHandler(req, res) {
   if (message.length > 500)
     return res.status(400).json({ error: 'message too long (max 500 chars)' });
 
+  const text   = message.trim();
+  const intent = detectIntent(text);
+  const topic  = extractTopic(text);
+  const userEmail = req.user.email;
+
   try {
-    const userId    = `web_${req.user.id}`;
-    const sessionId = await getOrCreateSession(userId);
-    const reply     = await watson.sendMessage(sessionId, message.trim(), userId);
-    res.json({ reply: reply.text, intent: reply.intent });
+    let reply = '';
+
+    switch (intent) {
+
+      case 'help':
+        reply =
+          "Here's what I can do:\n" +
+          '• "What am I subscribed to?" — list your active subscriptions\n' +
+          '• "Latest update on [Node Name]" — get the most recent post\n' +
+          '• "Unsubscribe from [Node Name]" — remove a subscription\n' +
+          '• "Search for [keyword]" — find public nodes by topic\n' +
+          '• "Create a node called [name]" — create a new node';
+        break;
+
+      case 'list_subscriptions': {
+        const { data: subs } = await supabase
+          .from('subscriptions')
+          .select('channel, nodes(title)')
+          .eq('user_id', req.user.id)
+          .eq('is_active', true);
+        if (!subs?.length) {
+          reply = 'You are not subscribed to any nodes yet. Go to Discover to find nodes.';
+        } else {
+          const list = subs.map(s => `• ${s.nodes?.title} (via ${s.channel})`).join('\n');
+          reply = `Your active subscriptions:\n${list}`;
+        }
+        break;
+      }
+
+      case 'latest_update': {
+        if (!topic) {
+          reply = 'Which node would you like the latest update for? Try: "latest update on Announcements"';
+          break;
+        }
+        const { data: update } = await supabase
+          .from('updates')
+          .select('content, posted_at, users!updates_author_id_fkey(name), nodes!inner(title)')
+          .ilike('nodes.title', `%${topic}%`)
+          .eq('status', 'open')
+          .order('posted_at', { ascending: false })
+          .limit(1)
+          .single();
+        if (!update) {
+          reply = `No open updates found for "${topic}". Check the node name and try again.`;
+        } else {
+          const date = new Date(update.posted_at).toLocaleDateString();
+          reply = `Latest update from "${update.nodes?.title}" (${date} by ${update.users?.name}):\n\n${update.content}`;
+        }
+        break;
+      }
+
+      case 'unsubscribe': {
+        if (!topic) {
+          reply = 'Which node do you want to unsubscribe from? Try: "unsubscribe from Deadlines"';
+          break;
+        }
+        const { data: node } = await supabase
+          .from('nodes').select('id, title').ilike('title', `%${topic}%`).single();
+        if (!node) {
+          reply = `I couldn't find a node matching "${topic}". Check the name and try again.`;
+          break;
+        }
+        await supabase
+          .from('subscriptions')
+          .update({ is_active: false })
+          .eq('user_id', req.user.id)
+          .eq('node_id', node.id);
+        reply = `You have been unsubscribed from "${node.title}".`;
+        break;
+      }
+
+      case 'search_nodes': {
+        const keyword = topic || text.replace(/search|find|look for|nodes about/gi, '').trim();
+        if (!keyword) {
+          reply = 'What topic would you like to search for? Try: "search for announcements"';
+          break;
+        }
+        const { data: nodes } = await supabase
+          .from('nodes')
+          .select('title, description')
+          .eq('is_public', true)
+          .or(`title.ilike.%${keyword}%,description.ilike.%${keyword}%`)
+          .order('created_at', { ascending: false })
+          .limit(5);
+        if (!nodes?.length) {
+          reply = `No public nodes found matching "${keyword}".`;
+        } else {
+          const list = nodes.map(n => `• ${n.title}${n.description ? ` — ${n.description.slice(0, 60)}` : ''}`).join('\n');
+          reply = `Found ${nodes.length} node${nodes.length !== 1 ? 's' : ''} matching "${keyword}":\n${list}`;
+        }
+        break;
+      }
+
+      case 'create_node': {
+        const title = topic;
+        if (!title) {
+          reply = 'What would you like to name the new node? Try: "create a node called Announcements"';
+          break;
+        }
+        const { data: newNode, error } = await supabase
+          .from('nodes')
+          .insert({ owner_id: req.user.id, title, is_public: true })
+          .select('id, title')
+          .single();
+        if (error) {
+          reply = `Sorry, I couldn't create the node. Please try again or use the web app.`;
+        } else {
+          reply = `✅ Node "${newNode.title}" created! You can now post updates to it from the web app.`;
+        }
+        break;
+      }
+
+      default:
+        reply = "I'm not sure how to help with that. Type \"help\" to see what I can do.";
+    }
+
+    res.json({ reply, intent });
   } catch (err) {
     console.error('[Chat] Error:', err.message);
-    res.status(500).json({ error: 'Failed to get response from Watson' });
+    res.status(500).json({ error: 'Failed to process your message. Please try again.' });
   }
 }
 
