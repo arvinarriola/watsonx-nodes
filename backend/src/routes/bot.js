@@ -97,6 +97,59 @@ router.post('/webhook', async (req, res) => {
         return res.json({ response: `You have been unsubscribed from "${node_title}".` });
       }
 
+      case 'search_nodes': {
+        const keyword = (node_title || '').trim();
+        if (!keyword)
+          return res.json({ response: 'What topic would you like to search for?' });
+
+        const { data: nodes } = await supabase
+          .from('nodes')
+          .select('id, title, description')
+          .eq('is_public', true)
+          .or(`title.ilike.%${keyword}%,description.ilike.%${keyword}%`)
+          .order('created_at', { ascending: false })
+          .limit(5);
+
+        if (!nodes?.length)
+          return res.json({ response: `No public nodes found matching "${keyword}".` });
+
+        const list = nodes.map(n => `• ${n.title}${n.description ? ` — ${n.description.slice(0, 60)}` : ''}`).join('\n');
+        return res.json({ response: `Found ${nodes.length} node${nodes.length !== 1 ? 's' : ''} matching "${keyword}":\n${list}` });
+      }
+
+      case 'create_node': {
+        // Expects: { node_title, node_description?, user_email, confirm? }
+        const { node_description = '', confirm } = req.body;
+
+        if (!user_email)
+          return res.json({ response: 'I need your email to create a node. What is your email?' });
+        if (!node_title)
+          return res.json({ response: 'What would you like to name the new node?' });
+
+        // Confirmation step — Watson should send confirm: true after user says "yes"
+        if (!confirm) {
+          return res.json({
+            response: `Got it! I'll create a node called "${node_title}"${node_description ? ` — "${node_description}"` : ''}. Shall I go ahead? (Say "yes" to confirm)`,
+          });
+        }
+
+        const { data: user } = await supabase
+          .from('users').select('id').eq('email', user_email).single();
+        if (!user) return res.json({ response: "I couldn't find your account. Please check your email." });
+
+        const { data: newNode, error } = await supabase
+          .from('nodes')
+          .insert({ owner_id: user.id, title: node_title, description: node_description, is_public: true })
+          .select('id, title')
+          .single();
+
+        if (error) return res.json({ response: 'Sorry, I couldn't create the node. Please try again.' });
+
+        return res.json({
+          response: `✅ Node "${newNode.title}" created successfully! You can now post updates to it from the web app.`,
+        });
+      }
+
       case 'help':
         return res.json({
           response:
@@ -104,7 +157,9 @@ router.post('/webhook', async (req, res) => {
             '• "What am I subscribed to?" — list your active subscriptions\n' +
             '• "Latest update on [Node Name]" — get the most recent post\n' +
             '• "Unsubscribe from [Node Name]" — remove a subscription\n' +
-            'Visit the web app to create nodes or manage settings.',
+            '• "Search for [keyword]" — find public nodes by topic\n' +
+            '• "Create a node called [name]" — create a new node\n' +
+            'Visit the web app to manage settings.',
         });
 
       default:

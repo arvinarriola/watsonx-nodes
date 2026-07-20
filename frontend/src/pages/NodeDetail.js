@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import SubscribeModal from '../components/SubscribeModal';
+import ChannelSetupModal from '../components/ChannelSetupModal';
 import ScheduleSelector, { scheduleLabel, SCHEDULE_BADGE } from '../components/ScheduleSelector';
 
 // ─── Inline edit modal ────────────────────────────────────────────────────────
@@ -407,7 +407,7 @@ export default function NodeDetail() {
 
       {/* ── Modals ── */}
       {showSubscribe && (
-        <SubscribeModal
+        <ChannelSetupModal
           nodeId={id}
           node={node}
           current={subscription}
