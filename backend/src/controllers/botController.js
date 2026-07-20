@@ -214,6 +214,8 @@ function detectIntent(text) {
   if (/\b(search|find|look(ing)? for|nodes about)\b/.test(t))                 return 'search_nodes';
   if (/\b(post|publish|add (an? )?(update|post|message))\b/.test(t))          return 'create_post';
   if (/\b(create|make|new node|add node)\b/.test(t))                          return 'create_node';
+  if (/\b(perform|reaction|how did|stats|engagement)\b/.test(t))              return 'post_performance';
+  if (/\b(suggest|what should i post|what to post|recommend)\b/.test(t))      return 'suggest_post';
   if (/\b(latest|recent|new update|last post)\b/.test(t))                     return 'latest_update';
   return 'unknown';
 }
@@ -257,6 +259,8 @@ async function chatHandler(req, res) {
           '• "What am I subscribed to?" — list your active subscriptions\n' +
           '• "Latest update on [Node Name]" — get the most recent post\n' +
           '• "Post [content] on [Node Name]" — post an update to a node you own\n' +
+          '• "How did my last post on [Node Name] perform?" — reactions + delivery stats\n' +
+          '• "Suggest what to post on [Node Name]" — get a smart posting suggestion\n' +
           '• "Unsubscribe from [Node Name]" — remove a subscription\n' +
           '• "Search for [keyword]" — find public nodes by topic\n' +
           '• "Create a node called [name]" — create a new node';
@@ -397,6 +401,120 @@ async function chatHandler(req, res) {
           dispatchImmediate(postNode.id, newPost, postNode.title).catch(console.error);
           reply = `Post published to "${postNode.title}"! Subscribers are being notified.`;
         }
+        break;
+      }
+
+      case 'post_performance': {
+        // "How did my last post on Announcements perform?"
+        if (!topic) {
+          reply = 'Which node would you like performance stats for? Try: "How did my last post on Announcements perform?"';
+          break;
+        }
+        const { data: perfNode } = await supabase
+          .from('nodes').select('id, title, owner_id').ilike('title', `%${topic}%`).single();
+
+        if (!perfNode) {
+          reply = `I could not find a node matching "${topic}".`;
+          break;
+        }
+        if (perfNode.owner_id !== req.user.id) {
+          reply = `You are not the owner of "${perfNode.title}". Performance stats are only available to node owners.`;
+          break;
+        }
+
+        const { data: lastPost } = await supabase
+          .from('updates')
+          .select('id, content, posted_at')
+          .eq('node_id', perfNode.id)
+          .order('posted_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (!lastPost) {
+          reply = `No posts found on "${perfNode.title}" yet.`;
+          break;
+        }
+
+        // Get delivery counts
+        const { count: sentCount } = await supabase
+          .from('notifications').select('*', { count: 'exact', head: true })
+          .eq('update_id', lastPost.id).eq('status', 'sent');
+        const { count: failedCount } = await supabase
+          .from('notifications').select('*', { count: 'exact', head: true })
+          .eq('update_id', lastPost.id).eq('status', 'failed');
+
+        // Get reaction counts
+        const { data: reactionRows } = await supabase
+          .from('reactions').select('emoji').eq('update_id', lastPost.id);
+        const reactionCounts = { '👍': 0, '✅': 0, '🔥': 0 };
+        (reactionRows || []).forEach(r => { if (reactionCounts[r.emoji] !== undefined) reactionCounts[r.emoji]++; });
+        const totalReactions = Object.values(reactionCounts).reduce((a, b) => a + b, 0);
+
+        const date    = new Date(lastPost.posted_at).toLocaleDateString();
+        const preview = lastPost.content.slice(0, 60) + (lastPost.content.length > 60 ? '...' : '');
+        const reactStr = totalReactions > 0
+          ? `\nReactions: ${Object.entries(reactionCounts).filter(([,v]) => v > 0).map(([k,v]) => `${k} ${v}`).join('  ')}`
+          : '\nNo reactions yet.';
+        const delivStr = (sentCount || 0) + (failedCount || 0) > 0
+          ? `\nDelivery: ${sentCount || 0} sent${failedCount > 0 ? `, ${failedCount} failed` : ''}`
+          : '\nNo notifications sent yet.';
+
+        reply = `Last post on "${perfNode.title}" (${date}):\n"${preview}"${reactStr}${delivStr}`;
+        break;
+      }
+
+      case 'suggest_post': {
+        // "Suggest what to post on Announcements"
+        if (!topic) {
+          reply = 'Which node would you like a suggestion for? Try: "Suggest what to post on Announcements"';
+          break;
+        }
+        const { data: sugNode } = await supabase
+          .from('nodes').select('id, title, owner_id').ilike('title', `%${topic}%`).single();
+
+        if (!sugNode) {
+          reply = `I could not find a node matching "${topic}".`;
+          break;
+        }
+        if (sugNode.owner_id !== req.user.id) {
+          reply = `You are not the owner of "${sugNode.title}". Suggestions are only available to node owners.`;
+          break;
+        }
+
+        const { data: recentPosts } = await supabase
+          .from('updates')
+          .select('content, posted_at, status')
+          .eq('node_id', sugNode.id)
+          .order('posted_at', { ascending: false })
+          .limit(3);
+
+        const { count: subCount } = await supabase
+          .from('subscriptions').select('*', { count: 'exact', head: true })
+          .eq('node_id', sugNode.id).eq('is_active', true);
+
+        if (!recentPosts?.length) {
+          reply = `"${sugNode.title}" has no posts yet. Consider posting an introduction — tell subscribers what this node is about and what kind of updates they can expect.`;
+          break;
+        }
+
+        const lastPost    = recentPosts[0];
+        const daysSince   = Math.floor((Date.now() - new Date(lastPost.posted_at)) / (1000 * 60 * 60 * 24));
+        const openPosts   = recentPosts.filter(p => p.status === 'open').length;
+        const subs        = subCount || 0;
+
+        let suggestion = `Here is my suggestion for "${sugNode.title}" (${subs} subscriber${subs !== 1 ? 's' : ''}):\n\n`;
+
+        if (daysSince >= 7) {
+          suggestion += `Your last post was ${daysSince} days ago — subscribers may have lost track. Consider posting a status update or summary of recent progress.`;
+        } else if (daysSince >= 3) {
+          suggestion += `It has been ${daysSince} days since your last post. A brief progress update or reminder would keep subscribers engaged.`;
+        } else if (openPosts === 0) {
+          suggestion += 'All your recent posts are closed. Consider posting a new update to keep the node active.';
+        } else {
+          suggestion += 'Your node looks active! Consider posting a follow-up or acknowledgement on your most recent update to close the loop with subscribers.';
+        }
+
+        reply = suggestion;
         break;
       }
 

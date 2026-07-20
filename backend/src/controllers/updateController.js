@@ -17,7 +17,21 @@ async function listUpdates(req, res) {
 
     const enriched = await Promise.all(updates.map(async (u) => {
       const reactions = await getReactionCounts(u.id);
-      return { ...u, author_name: u.users?.name, reactions };
+
+      // Delivery counts from notifications table
+      const { count: sentCount } = await supabase
+        .from('notifications').select('*', { count: 'exact', head: true })
+        .eq('update_id', u.id).eq('status', 'sent');
+      const { count: failedCount } = await supabase
+        .from('notifications').select('*', { count: 'exact', head: true })
+        .eq('update_id', u.id).eq('status', 'failed');
+
+      return {
+        ...u,
+        author_name: u.users?.name,
+        reactions,
+        delivery: { sent: sentCount || 0, failed: failedCount || 0 },
+      };
     }));
     res.json({ updates: enriched });
   } catch (err) {

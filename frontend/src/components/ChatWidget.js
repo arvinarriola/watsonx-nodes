@@ -1,14 +1,43 @@
 import React, { useState, useRef, useEffect } from 'react';
 import api from '../services/api';
-
-const WELCOME = "Hi! I'm your WatsonX Nodes assistant. Try asking:\n• \"What am I subscribed to?\"\n• \"Latest update on [Node Name]\"\n• \"Help\"";
+import { useAuth } from '../context/AuthContext';
 
 export default function ChatWidget() {
-  const [open, setOpen]       = useState(false);
-  const [messages, setMessages] = useState([{ from: 'bot', text: WELCOME }]);
-  const [input, setInput]     = useState('');
-  const [loading, setLoading] = useState(false);
-  const bottomRef             = useRef(null);
+  const { user }                  = useAuth();
+  const [open, setOpen]           = useState(false);
+  const [messages, setMessages]   = useState([]);
+  const [input, setInput]         = useState('');
+  const [loading, setLoading]     = useState(false);
+  const [greeted, setGreeted]     = useState(false);
+  const bottomRef                 = useRef(null);
+
+  // Build personalised greeting when widget opens for the first time
+  useEffect(() => {
+    if (!open || greeted) return;
+    setGreeted(true);
+    setLoading(true);
+    api.get('/nodes/subscribed')
+      .then(res => {
+        const subs  = res.data.nodes || [];
+        const name  = user?.name?.split(' ')[0] || 'there';
+        const count = subs.length;
+        let greeting = `Hi ${name}! `;
+        if (count === 0) {
+          greeting += "You are not subscribed to any nodes yet. Go to Discover to find nodes.\n\n";
+        } else {
+          const titles = subs.slice(0, 3).map(n => n.title).join(', ');
+          const more   = count > 3 ? ` and ${count - 3} more` : '';
+          greeting += `You are subscribed to ${count} node${count !== 1 ? 's' : ''}: ${titles}${more}.\n\n`;
+        }
+        greeting += 'Type "help" to see what I can do.';
+        setMessages([{ from: 'bot', text: greeting }]);
+      })
+      .catch(() => {
+        const name = user?.name?.split(' ')[0] || 'there';
+        setMessages([{ from: 'bot', text: `Hi ${name}! Type "help" to see what I can do.` }]);
+      })
+      .finally(() => setLoading(false));
+  }, [open, greeted, user]);
 
   // Scroll to bottom whenever messages change
   useEffect(() => {
@@ -59,6 +88,13 @@ export default function ChatWidget() {
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2" style={{ minHeight: 0 }}>
+            {loading && messages.length === 0 && (
+              <div className="flex justify-start">
+                <div className="bg-gray-100 text-gray-400 text-sm px-3 py-2 rounded-2xl rounded-bl-sm">
+                  Loading...
+                </div>
+              </div>
+            )}
             {messages.map((msg, i) => (
               <div key={i} className={`flex ${msg.from === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[85%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap ${
@@ -70,7 +106,7 @@ export default function ChatWidget() {
                 </div>
               </div>
             ))}
-            {loading && (
+            {loading && messages.length > 0 && (
               <div className="flex justify-start">
                 <div className="bg-gray-100 text-gray-400 text-sm px-3 py-2 rounded-2xl rounded-bl-sm">
                   Thinking...

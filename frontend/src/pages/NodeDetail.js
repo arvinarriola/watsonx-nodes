@@ -135,9 +135,26 @@ function UpdateCard({ update, isOwner, onEdit, onClose, onReopen }) {
 
       {/* Meta + actions */}
       <div className="flex items-center justify-between gap-2 mt-1">
-        <p className="text-xs text-gray-400">
-          {update.author_name} · {new Date(update.posted_at).toLocaleString()}
-        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-xs text-gray-400">
+            {update.author_name} · {new Date(update.posted_at).toLocaleString()}
+          </p>
+          {/* Delivery status — visible to owner only */}
+          {isOwner && (update.delivery?.sent > 0 || update.delivery?.failed > 0) && (
+            <span className="flex items-center gap-1">
+              {update.delivery.sent > 0 && (
+                <span className="text-xs bg-green-50 text-green-600 border border-green-200 px-1.5 py-0.5 rounded-full font-medium">
+                  ✓ {update.delivery.sent} sent
+                </span>
+              )}
+              {update.delivery.failed > 0 && (
+                <span className="text-xs bg-red-50 text-red-500 border border-red-200 px-1.5 py-0.5 rounded-full font-medium">
+                  ✕ {update.delivery.failed} failed
+                </span>
+              )}
+            </span>
+          )}
+        </div>
         {isOwner && (
           <div className="flex gap-2 shrink-0">
             {!isClosed && (
