@@ -210,10 +210,11 @@ function detectIntent(text) {
   const t = text.toLowerCase();
   if (/\b(help|what can you do|commands)\b/.test(t))                          return 'help';
   if (/\b(subscri|following|my nodes)\b/.test(t))                             return 'list_subscriptions';
-  if (/\b(latest|recent|new|update|post)\b/.test(t))                          return 'latest_update';
   if (/\b(unsub|stop alert|remove sub)\b/.test(t))                            return 'unsubscribe';
   if (/\b(search|find|look(ing)? for|nodes about)\b/.test(t))                 return 'search_nodes';
+  if (/\b(post|publish|add (an? )?(update|post|message))\b/.test(t))          return 'create_post';
   if (/\b(create|make|new node|add node)\b/.test(t))                          return 'create_node';
+  if (/\b(latest|recent|new update|last post)\b/.test(t))                     return 'latest_update';
   return 'unknown';
 }
 
@@ -255,6 +256,7 @@ async function chatHandler(req, res) {
           "Here's what I can do:\n" +
           '• "What am I subscribed to?" — list your active subscriptions\n' +
           '• "Latest update on [Node Name]" — get the most recent post\n' +
+          '• "Post [content] on [Node Name]" — post an update to a node you own\n' +
           '• "Unsubscribe from [Node Name]" — remove a subscription\n' +
           '• "Search for [keyword]" — find public nodes by topic\n' +
           '• "Create a node called [name]" — create a new node';
@@ -335,6 +337,65 @@ async function chatHandler(req, res) {
         } else {
           const list = nodes.map(n => `• ${n.title}${n.description ? ` — ${n.description.slice(0, 60)}` : ''}`).join('\n');
           reply = `Found ${nodes.length} node${nodes.length !== 1 ? 's' : ''} matching "${keyword}":\n${list}`;
+        }
+        break;
+      }
+
+      case 'create_post': {
+        // Expected: "post [content] on [Node Name]"
+        // Extract node name after "on" / "to" / "in", content is everything before
+        const onMatch = text.match(/^.+?\b(?:on|to|in)\b\s+(.+)$/i);
+        const nodeName = onMatch ? onMatch[1].trim() : null;
+
+        // Content is everything before the last "on/to/in <node>" segment
+        const contentMatch = text.match(/^(?:post|publish|add (?:an? )?(?:update|post|message))[:\s]+(.+?)\s+(?:on|to|in)\s+.+$/i);
+        const postContent = contentMatch ? contentMatch[1].trim() : null;
+
+        if (!nodeName) {
+          reply = 'Which node do you want to post to? Try: "post Meeting at 3pm on Announcements"';
+          break;
+        }
+        if (!postContent) {
+          reply = 'What is the content of the post? Try: "post Meeting at 3pm on Announcements"';
+          break;
+        }
+
+        // Find the node and verify ownership
+        const { data: postNode } = await supabase
+          .from('nodes')
+          .select('id, title, owner_id')
+          .ilike('title', `%${nodeName}%`)
+          .single();
+
+        if (!postNode) {
+          reply = `I could not find a node matching "${nodeName}". Check the name and try again.`;
+          break;
+        }
+        if (postNode.owner_id !== req.user.id) {
+          reply = `You are not the owner of "${postNode.title}". Only the node owner can post updates.`;
+          break;
+        }
+
+        const { data: newPost, error: postError } = await supabase
+          .from('updates')
+          .insert({
+            node_id:         postNode.id,
+            author_id:       req.user.id,
+            content:         postContent,
+            schedule_type:   'immediate',
+            schedule_config: {},
+            status:          'open',
+          })
+          .select('id, content')
+          .single();
+
+        if (postError) {
+          reply = 'Sorry, I could not create the post. Please try again or use the web app.';
+        } else {
+          // Trigger immediate notifications
+          const { dispatchImmediate } = require('../services/notificationService');
+          dispatchImmediate(postNode.id, newPost, postNode.title).catch(console.error);
+          reply = `Post published to "${postNode.title}"! Subscribers are being notified.`;
         }
         break;
       }
