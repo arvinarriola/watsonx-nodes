@@ -2,6 +2,38 @@ import React, { useState, useRef, useEffect } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
+// ── Typing indicator ──────────────────────────────────────────────────────────
+function TypingDots() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '10px 14px', background: '#2a2d3a', borderRadius: '16px 16px 16px 4px', width: 'fit-content' }}>
+      <span className="typing-dot" />
+      <span className="typing-dot" />
+      <span className="typing-dot" />
+    </div>
+  );
+}
+
+// ── Format bot message — bold **text**, bullet lines ─────────────────────────
+function BotMessage({ text }) {
+  const lines = text.split('\n');
+  return (
+    <div style={{ fontSize: 13, lineHeight: 1.6, color: '#e8eaf0', whiteSpace: 'pre-wrap' }}>
+      {lines.map((line, i) => {
+        // Bold **text**
+        const parts = line.split(/\*\*(.+?)\*\*/g);
+        const formatted = parts.map((p, j) => j % 2 === 1 ? <strong key={j}>{p}</strong> : p);
+        // Bullet prefix style
+        const isBullet = line.startsWith('•');
+        return (
+          <div key={i} style={isBullet ? { paddingLeft: 4 } : {}}>
+            {formatted}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ChatWidget() {
   const { user }                  = useAuth();
   const [open, setOpen]           = useState(false);
@@ -10,8 +42,9 @@ export default function ChatWidget() {
   const [loading, setLoading]     = useState(false);
   const [greeted, setGreeted]     = useState(false);
   const bottomRef                 = useRef(null);
+  const inputRef                  = useRef(null);
 
-  // Build personalised greeting when widget opens for the first time
+  // Personalised greeting on first open
   useEffect(() => {
     if (!open || greeted) return;
     setGreeted(true);
@@ -21,38 +54,41 @@ export default function ChatWidget() {
         const subs  = res.data.nodes || [];
         const name  = user?.name?.split(' ')[0] || 'there';
         const count = subs.length;
-        let greeting = `Hi ${name}! `;
+        let greeting = `Hi **${name}**! `;
         if (count === 0) {
-          greeting += "You are not subscribed to any nodes yet. Go to Discover to find nodes.\n\n";
+          greeting += "You are not subscribed to any nodes yet.\n\nGo to **Discover** to find and subscribe to nodes.";
         } else {
           const titles = subs.slice(0, 3).map(n => n.title).join(', ');
           const more   = count > 3 ? ` and ${count - 3} more` : '';
-          greeting += `You are subscribed to ${count} node${count !== 1 ? 's' : ''}: ${titles}${more}.\n\n`;
+          greeting += `You are subscribed to **${count}** node${count !== 1 ? 's' : ''}: ${titles}${more}.`;
         }
-        greeting += 'Type "help" to see what I can do.';
+        greeting += '\n\nType **help** to see what I can do.';
         setMessages([{ from: 'bot', text: greeting }]);
       })
       .catch(() => {
         const name = user?.name?.split(' ')[0] || 'there';
-        setMessages([{ from: 'bot', text: `Hi ${name}! Type "help" to see what I can do.` }]);
+        setMessages([{ from: 'bot', text: `Hi **${name}**! Type **help** to see what I can do.` }]);
       })
       .finally(() => setLoading(false));
   }, [open, greeted, user]);
 
-  // Scroll to bottom whenever messages change
+  // Scroll to bottom on new messages
   useEffect(() => {
     if (open) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, open]);
+  }, [messages, loading, open]);
+
+  // Focus input when opened
+  useEffect(() => {
+    if (open) setTimeout(() => inputRef.current?.focus(), 100);
+  }, [open]);
 
   const sendMessage = async (e) => {
     e.preventDefault();
     const text = input.trim().slice(0, 500);
     if (!text || loading) return;
-
     setMessages(prev => [...prev, { from: 'user', text }]);
     setInput('');
     setLoading(true);
-
     try {
       const res = await api.post('/bot/chat', { message: text });
       setMessages(prev => [...prev, { from: 'bot', text: res.data.reply }]);
@@ -69,68 +105,151 @@ export default function ChatWidget() {
       {/* ── Floating button ── */}
       <button
         onClick={() => setOpen(o => !o)}
-        aria-label="Open Watson Assistant chat"
-        className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg flex items-center justify-center transition-colors text-2xl"
+        aria-label="Open Watson Assistant"
+        style={{
+          position: 'fixed', bottom: 24, right: 24, zIndex: 50,
+          width: 52, height: 52,
+          background: open ? '#2a2d3a' : 'linear-gradient(135deg, #4f7ef8, #7c5cfc)',
+          border: open ? '1px solid #3a3d4a' : 'none',
+          borderRadius: '50%',
+          boxShadow: open ? 'none' : '0 4px 24px rgba(79,126,248,0.4)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer',
+          transition: 'all 0.2s',
+          fontSize: 20,
+          color: 'white',
+        }}
       >
         {open ? '✕' : '💬'}
       </button>
 
       {/* ── Chat panel ── */}
       {open && (
-        <div className="fixed bottom-24 right-6 z-50 w-80 bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden"
-             style={{ maxHeight: '460px' }}>
-
+        <div
+          style={{
+            position: 'fixed', bottom: 88, right: 24, zIndex: 50,
+            width: 340,
+            maxHeight: 500,
+            background: '#1a1d27',
+            border: '1px solid #2a2d3a',
+            borderRadius: 20,
+            boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
           {/* Header */}
-          <div className="bg-blue-600 px-4 py-3 flex items-center gap-2">
-            <span className="text-white font-semibold text-sm">Watson Assistant</span>
-            <span className="ml-auto text-xs text-blue-200">WatsonX Nodes</span>
+          <div style={{ background: 'linear-gradient(135deg, #4f7ef8 0%, #7c5cfc 100%)', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>
+              🤖
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>Watson Assistant</div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)' }}>WatsonX Nodes</div>
+            </div>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#4ade80' }} />
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)' }}>Online</span>
+            </div>
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2" style={{ minHeight: 0 }}>
-            {loading && messages.length === 0 && (
-              <div className="flex justify-start">
-                <div className="bg-gray-100 text-gray-400 text-sm px-3 py-2 rounded-2xl rounded-bl-sm">
-                  Loading...
-                </div>
-              </div>
-            )}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '14px 12px', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0 }}>
+
+            {/* Loading greeting */}
+            {loading && messages.length === 0 && <TypingDots />}
+
             {messages.map((msg, i) => (
-              <div key={i} className={`flex ${msg.from === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap ${
-                  msg.from === 'user'
-                    ? 'bg-blue-600 text-white rounded-br-sm'
-                    : 'bg-gray-100 text-gray-800 rounded-bl-sm'
-                }`}>
-                  {msg.text}
+              <div key={i} style={{ display: 'flex', justifyContent: msg.from === 'user' ? 'flex-end' : 'flex-start' }}>
+                {msg.from === 'bot' && (
+                  <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg, #4f7ef8, #7c5cfc)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, flexShrink: 0, marginRight: 7, alignSelf: 'flex-end' }}>
+                    🤖
+                  </div>
+                )}
+                <div style={{
+                  maxWidth: '78%',
+                  padding: '10px 14px',
+                  borderRadius: msg.from === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                  background: msg.from === 'user'
+                    ? 'linear-gradient(135deg, #4f7ef8, #7c5cfc)'
+                    : '#2a2d3a',
+                  color: msg.from === 'user' ? 'white' : '#e8eaf0',
+                  fontSize: 13,
+                  boxShadow: msg.from === 'user' ? '0 2px 12px rgba(79,126,248,0.3)' : 'none',
+                }}>
+                  {msg.from === 'bot' ? <BotMessage text={msg.text} /> : msg.text}
                 </div>
               </div>
             ))}
+
+            {/* Typing indicator */}
             {loading && messages.length > 0 && (
-              <div className="flex justify-start">
-                <div className="bg-gray-100 text-gray-400 text-sm px-3 py-2 rounded-2xl rounded-bl-sm">
-                  Thinking...
-                </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'flex-end', gap: 7 }}>
+                <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg, #4f7ef8, #7c5cfc)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, flexShrink: 0 }}>🤖</div>
+                <TypingDots />
               </div>
             )}
+
             <div ref={bottomRef} />
           </div>
 
+          {/* Quick suggestions */}
+          {messages.length <= 1 && !loading && (
+            <div style={{ padding: '0 12px 10px', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {['help', 'What am I subscribed to?', 'Search for nodes'].map(s => (
+                <button
+                  key={s}
+                  onClick={() => { setInput(s); setTimeout(() => inputRef.current?.focus(), 50); }}
+                  style={{ fontSize: 11, padding: '4px 10px', borderRadius: 99, background: 'rgba(79,126,248,0.1)', color: '#7da4fb', border: '1px solid rgba(79,126,248,0.2)', cursor: 'pointer', transition: 'all 0.15s' }}
+                  onMouseEnter={e => e.target.style.background = 'rgba(79,126,248,0.2)'}
+                  onMouseLeave={e => e.target.style.background = 'rgba(79,126,248,0.1)'}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Input */}
-          <form onSubmit={sendMessage} className="border-t border-gray-200 p-2 flex gap-2">
+          <form onSubmit={sendMessage} style={{ padding: '10px 12px', borderTop: '1px solid #2a2d3a', display: 'flex', gap: 8, background: '#1a1d27' }}>
             <input
+              ref={inputRef}
               type="text"
               value={input}
               onChange={e => setInput(e.target.value)}
               placeholder="Ask something..."
               maxLength={500}
               disabled={loading}
-              className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+              style={{
+                flex: 1,
+                background: '#0f1117',
+                border: '1px solid #2a2d3a',
+                borderRadius: 10,
+                padding: '9px 12px',
+                fontSize: 13,
+                color: '#e8eaf0',
+                outline: 'none',
+                transition: 'border-color 0.2s',
+              }}
+              onFocus={e => e.target.style.borderColor = '#4f7ef8'}
+              onBlur={e => e.target.style.borderColor = '#2a2d3a'}
             />
             <button
               type="submit"
               disabled={loading || !input.trim()}
-              className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+              style={{
+                background: input.trim() && !loading ? 'linear-gradient(135deg, #4f7ef8, #7c5cfc)' : '#2a2d3a',
+                color: input.trim() && !loading ? 'white' : '#7a7f9a',
+                border: 'none',
+                borderRadius: 10,
+                padding: '9px 14px',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: input.trim() && !loading ? 'pointer' : 'not-allowed',
+                transition: 'all 0.2s',
+                whiteSpace: 'nowrap',
+              }}
             >
               Send
             </button>
