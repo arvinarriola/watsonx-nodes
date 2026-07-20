@@ -54,11 +54,17 @@ async function subscribedNodes(req, res) {
       .eq('is_active', true);
     if (error) throw error;
 
-    const nodes = subs.map(s => ({
-      ...s.nodes,
-      owner_name: s.nodes?.users?.name,
-      channel: s.channel,
-      channel_config: s.channel_config,
+    const nodes = await Promise.all(subs.map(async (s) => {
+      const { count: sub_count } = await supabase.from('subscriptions').select('*', { count: 'exact', head: true }).eq('node_id', s.nodes.id).eq('is_active', true);
+      const { count: upd_count } = await supabase.from('updates').select('*', { count: 'exact', head: true }).eq('node_id', s.nodes.id);
+      return {
+        ...s.nodes,
+        owner_name: s.nodes?.users?.name,
+        channel: s.channel,
+        channel_config: s.channel_config,
+        subscriber_count: sub_count || 0,
+        update_count: upd_count || 0,
+      };
     }));
     res.json({ nodes });
   } catch (err) {
