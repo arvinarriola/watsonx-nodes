@@ -13,19 +13,49 @@ function TypingDots() {
   );
 }
 
+// ── Extract plain text from a line (strip ** markers) ────────────────────────
+function plainText(line) {
+  return line.replace(/\*\*/g, '').replace(/^•\s*/, '').trim();
+}
+
 // ── Format bot message — bold **text**, bullet lines ─────────────────────────
-function BotMessage({ text }) {
+function BotMessage({ text, onOptionClick }) {
   const lines = text.split('\n');
   return (
-    <div style={{ fontSize: 13, lineHeight: 1.6, color: '#e8eaf0', whiteSpace: 'pre-wrap' }}>
+    <div style={{ fontSize: 13, lineHeight: 1.5, color: '#e8eaf0' }}>
       {lines.map((line, i) => {
-        // Bold **text**
+        if (line === '') return <div key={i} style={{ height: 6 }} />;
         const parts = line.split(/\*\*(.+?)\*\*/g);
         const formatted = parts.map((p, j) => j % 2 === 1 ? <strong key={j}>{p}</strong> : p);
-        // Bullet prefix style
         const isBullet = line.startsWith('•');
+        if (isBullet) {
+          // Extract the example phrase before the em-dash to use as the clickable command
+          const raw = plainText(line);
+          const command = raw.split('—')[0].replace(/["'"]/g, '').trim();
+          return (
+            <div
+              key={i}
+              onClick={() => onOptionClick && onOptionClick(command)}
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: 8,
+                background: 'rgba(79,126,248,0.06)',
+                border: '1px solid rgba(79,126,248,0.12)',
+                borderRadius: 8,
+                padding: '8px 10px',
+                marginBottom: 5,
+                cursor: onOptionClick ? 'pointer' : 'default',
+                transition: 'background 0.15s, border-color 0.15s',
+              }}
+              onMouseEnter={e => { if (onOptionClick) { e.currentTarget.style.background = 'rgba(79,126,248,0.14)'; e.currentTarget.style.borderColor = 'rgba(79,126,248,0.3)'; }}}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(79,126,248,0.06)'; e.currentTarget.style.borderColor = 'rgba(79,126,248,0.12)'; }}
+            >
+              <span style={{ color: '#4f7ef8', fontWeight: 700, flexShrink: 0, marginTop: 1 }}>›</span>
+              <span>{formatted}</span>
+            </div>
+          );
+        }
         return (
-          <div key={i} style={isBullet ? { paddingLeft: 4 } : {}}>
+          <div key={i} style={{ marginBottom: 4 }}>
             {formatted}
           </div>
         );
@@ -85,6 +115,11 @@ export default function ChatWidget() {
   const sendMessage = async (e) => {
     e.preventDefault();
     const text = input.trim().slice(0, 500);
+    if (!text || loading) return;
+    await dispatchMessage(text);
+  };
+
+  const dispatchMessage = async (text) => {
     if (!text || loading) return;
     setMessages(prev => [...prev, { from: 'user', text }]);
     setInput('');
@@ -178,7 +213,7 @@ export default function ChatWidget() {
                   fontSize: 13,
                   boxShadow: msg.from === 'user' ? '0 2px 12px rgba(79,126,248,0.3)' : 'none',
                 }}>
-                  {msg.from === 'bot' ? <BotMessage text={msg.text} /> : msg.text}
+                  {msg.from === 'bot' ? <BotMessage text={msg.text} onOptionClick={dispatchMessage} /> : msg.text}
                 </div>
               </div>
             ))}
