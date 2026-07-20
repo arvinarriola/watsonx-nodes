@@ -209,7 +209,7 @@ async function testWatson(req, res) {
 function detectIntent(text) {
   const t = text.toLowerCase();
   if (/\b(help|what can you do|commands)\b/.test(t))                          return 'help';
-  if (/\b(subscri|following|my nodes)\b/.test(t))                             return 'list_subscriptions';
+  if (/\b(subscri|following|my nodes|what am i)/.test(t))                     return 'list_subscriptions';
   if (/\b(unsub|stop alert|remove sub)\b/.test(t))                            return 'unsubscribe';
   if (/\b(search|find|look(ing)? for|nodes about)\b/.test(t))                 return 'search_nodes';
   if (/\b(post|publish|add (an? )?(update|post|message))\b/.test(t))          return 'create_post';
