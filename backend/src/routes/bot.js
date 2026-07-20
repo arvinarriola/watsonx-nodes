@@ -143,7 +143,7 @@ router.post('/webhook', async (req, res) => {
           .select('id, title')
           .single();
 
-        if (error) return res.json({ response: 'Sorry, I couldn't create the node. Please try again.' });
+        if (error) return res.json({ response: 'Sorry, I could not create the node. Please try again.' });
 
         return res.json({
           response: `✅ Node "${newNode.title}" created successfully! You can now post updates to it from the web app.`,

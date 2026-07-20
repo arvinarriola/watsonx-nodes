@@ -305,7 +305,7 @@ async function chatHandler(req, res) {
         const { data: node } = await supabase
           .from('nodes').select('id, title').ilike('title', `%${topic}%`).single();
         if (!node) {
-          reply = `I couldn't find a node matching "${topic}". Check the name and try again.`;
+          reply = `I could not find a node matching "${topic}". Check the name and try again.`;
           break;
         }
         await supabase
