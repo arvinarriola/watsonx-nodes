@@ -5,6 +5,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 import Navbar from './components/Navbar';
+import ChatWidget from './components/ChatWidget';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
@@ -30,6 +31,7 @@ function AppRoutes() {
   return (
     <>
       {user && <Navbar />}
+      {user && <ChatWidget />}
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/login"    element={<PublicRoute><Login /></PublicRoute>} />

@@ -1,5 +1,6 @@
 const supabase = require('../db/supabase');
 const { dispatchImmediate } = require('../services/notificationService');
+const { getReactionCounts } = require('./reactionController');
 
 // GET /api/nodes/:id/updates
 async function listUpdates(req, res) {
@@ -14,7 +15,10 @@ async function listUpdates(req, res) {
       .order('posted_at', { ascending: false });
     if (error) throw error;
 
-    const enriched = updates.map(u => ({ ...u, author_name: u.users?.name }));
+    const enriched = await Promise.all(updates.map(async (u) => {
+      const reactions = await getReactionCounts(u.id);
+      return { ...u, author_name: u.users?.name, reactions };
+    }));
     res.json({ updates: enriched });
   } catch (err) {
     console.error(err);

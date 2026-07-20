@@ -1,7 +1,9 @@
 // Load .env for local development — Railway injects env vars directly, so this is a no-op in production
 require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
-const express = require('express');
-const cors = require('cors');
+const express   = require('express');
+const cors      = require('cors');
+const helmet    = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 const authRoutes         = require('./routes/auth');
 const nodeRoutes         = require('./routes/nodes');
@@ -13,6 +15,17 @@ const botRoutes          = require('./routes/bot');
 require('./jobs/scheduler');
 
 const app = express();
+
+// ─── Security middleware ───────────────────────────────────────────────────────
+app.use(helmet());
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,                   // max 10 login attempts per IP per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
+});
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,
@@ -31,6 +44,7 @@ app.use(cors({
 app.use(express.json());
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
+app.use('/api/auth/login',    loginLimiter);
 app.use('/api/auth',          authRoutes);
 app.use('/api/nodes',         nodeRoutes);
 app.use('/api/nodes',         updateRoutes);

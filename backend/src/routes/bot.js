@@ -1,6 +1,7 @@
-const router = require('express').Router();
-const supabase = require('../db/supabase');
-const { slackHandler, whatsappHandler, testWatson } = require('../controllers/botController');
+const router      = require('express').Router();
+const supabase    = require('../db/supabase');
+const authenticate = require('../middleware/authenticate');
+const { slackHandler, whatsappHandler, testWatson, chatHandler } = require('../controllers/botController');
 
 // ── Inbound channel webhooks ───────────────────────────────────────────────────
 
@@ -15,6 +16,11 @@ router.post('/whatsapp', whatsappHandler);
 // GET /api/bot/test-watson — verify Watson credentials
 router.get('/test-watson', testWatson);
 
+// ── In-app chat (authenticated) ───────────────────────────────────────────────
+
+// POST /api/bot/chat — browser chat widget → Watson
+router.post('/chat', authenticate, chatHandler);
+
 // ── Watson webhook (intent fulfillment) ───────────────────────────────────────
 //
 // Watson Assistant calls this endpoint during a conversation turn when it needs
@@ -24,6 +30,15 @@ router.get('/test-watson', testWatson);
 // POST /api/bot/webhook
 router.post('/webhook', async (req, res) => {
   const { intent, user_email, node_title } = req.body;
+
+  // Input validation
+  if (!intent || typeof intent !== 'string' || intent.length > 50)
+    return res.json({ response: "I couldn't understand that request." });
+  if (user_email && (typeof user_email !== 'string' || user_email.length > 254))
+    return res.json({ response: "I couldn't understand that request." });
+  if (node_title && (typeof node_title !== 'string' || node_title.length > 150))
+    return res.json({ response: "I couldn't understand that request." });
+
 
   try {
     switch (intent) {

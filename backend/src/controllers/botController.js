@@ -13,9 +13,10 @@
  *   5. Reply is dispatched back to the user via the appropriate channel sender
  */
 
-const watson = require('../services/watsonService');
-const axios  = require('axios');
-const twilio = require('twilio');
+const watson  = require('../services/watsonService');
+const axios   = require('axios');
+const twilio  = require('twilio');
+const supabase = require('../db/supabase');
 
 // ── In-memory session store (keyed by userId string) ─────────────────────────
 // For production, swap with Redis or a Supabase table.
@@ -101,10 +102,16 @@ async function slackHandler(req, res) {
  * POST /api/bot/whatsapp
  * Handles Twilio WhatsApp inbound webhook.
  * Twilio sends form-encoded: { From, Body, ... }
+ *
+ * Reaction shortcut: if the body is one of 👍 ✅ 🔥, save it as a reaction
+ * against the most recent notification sent to this phone number.
  */
+
+const REACTION_EMOJIS = new Set(['👍', '✅', '🔥']);
+
 async function whatsappHandler(req, res) {
   const from = req.body?.From;  // e.g. "whatsapp:+63912345678"
-  const body = req.body?.Body;
+  const body = req.body?.Body?.trim();
 
   if (!from || !body) {
     return res.status(400).send('<Response></Response>');
@@ -113,12 +120,69 @@ async function whatsappHandler(req, res) {
   // Respond with empty TwiML immediately so Twilio doesn't retry
   res.set('Content-Type', 'text/xml').send('<Response></Response>');
 
+  // ── Reaction shortcut ─────────────────────────────────────────────────────
+  if (REACTION_EMOJIS.has(body)) {
+    handleWhatsAppReaction(from, body).catch(console.error);
+    return;
+  }
+
   handleMessage({
     userId:      `whatsapp_${from}`,
-    text:        body.trim(),
+    text:        body,
     channel:     'whatsapp',
-    replyTarget: from,           // send reply back to the sender's WhatsApp number
+    replyTarget: from,
   }).catch(console.error);
+}
+
+/**
+ * Save a WhatsApp emoji reaction against the most recently sent notification
+ * for this phone number, then reply with a confirmation.
+ */
+async function handleWhatsAppReaction(from, emoji) {
+  const phone = from.replace('whatsapp:', '');
+
+  try {
+    // Find the subscription for this phone number
+    const { data: sub } = await supabase
+      .from('subscriptions')
+      .select('id, node_id')
+      .eq('channel', 'whatsapp')
+      .eq('is_active', true)
+      .filter('channel_config->>phone', 'eq', phone)
+      .single();
+
+    if (!sub) return;
+
+    // Find the most recent notification sent to this subscription
+    const { data: notification } = await supabase
+      .from('notifications')
+      .select('update_id')
+      .eq('subscription_id', sub.id)
+      .eq('status', 'sent')
+      .order('sent_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (!notification) return;
+
+    // Save the reaction (no user_id — external channel reaction)
+    await supabase.from('reactions').insert({
+      update_id: notification.update_id,
+      user_id:   null,
+      channel:   'whatsapp',
+      emoji,
+    });
+
+    // Send a confirmation back via WhatsApp
+    const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    await client.messages.create({
+      from: process.env.TWILIO_WHATSAPP_FROM,
+      to:   from,
+      body: `${emoji} Reaction saved!`,
+    });
+  } catch (err) {
+    console.error('[WhatsApp reaction] Error:', err.message);
+  }
 }
 
 /**
@@ -135,4 +199,27 @@ async function testWatson(req, res) {
   }
 }
 
-module.exports = { slackHandler, whatsappHandler, testWatson };
+/**
+ * POST /api/bot/chat  (authenticated)
+ * In-app chat widget endpoint — browser → Watson → reply JSON.
+ * Body: { message: string }
+ */
+async function chatHandler(req, res) {
+  const { message } = req.body;
+  if (!message || typeof message !== 'string' || message.trim().length === 0)
+    return res.status(400).json({ error: 'message is required' });
+  if (message.length > 500)
+    return res.status(400).json({ error: 'message too long (max 500 chars)' });
+
+  try {
+    const userId    = `web_${req.user.id}`;
+    const sessionId = await getOrCreateSession(userId);
+    const reply     = await watson.sendMessage(sessionId, message.trim(), userId);
+    res.json({ reply: reply.text, intent: reply.intent });
+  } catch (err) {
+    console.error('[Chat] Error:', err.message);
+    res.status(500).json({ error: 'Failed to get response from Watson' });
+  }
+}
+
+module.exports = { slackHandler, whatsappHandler, testWatson, chatHandler };

@@ -64,6 +64,50 @@ function EditPostModal({ update, onClose, onSave }) {
   );
 }
 
+// ─── Reaction bar ─────────────────────────────────────────────────────────────
+const EMOJIS = ['👍', '✅', '🔥'];
+
+function ReactionBar({ updateId, initialReactions }) {
+  const [reactions, setReactions] = useState(initialReactions || { '👍': 0, '✅': 0, '🔥': 0 });
+  const [busy, setBusy] = useState(false);
+
+  const handleReact = async (emoji) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await api.post(`/updates/${updateId}/react`, { emoji });
+      setReactions(res.data.reactions);
+    } catch {
+      toast.error('Failed to save reaction');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const total = Object.values(reactions).reduce((a, b) => a + b, 0);
+
+  return (
+    <div className="flex items-center gap-2 pt-2 border-t border-gray-100 mt-1">
+      {EMOJIS.map(emoji => (
+        <button
+          key={emoji}
+          onClick={() => handleReact(emoji)}
+          disabled={busy}
+          className="flex items-center gap-1 text-xs px-2 py-1 rounded-full border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors disabled:opacity-50"
+        >
+          <span>{emoji}</span>
+          {reactions[emoji] > 0 && (
+            <span className="font-semibold text-gray-600">{reactions[emoji]}</span>
+          )}
+        </button>
+      ))}
+      {total > 0 && (
+        <span className="text-xs text-gray-400 ml-1">{total} reaction{total !== 1 ? 's' : ''}</span>
+      )}
+    </div>
+  );
+}
+
 // ─── Single update card ───────────────────────────────────────────────────────
 function UpdateCard({ update, isOwner, onEdit, onClose, onReopen }) {
   const isClosed = update.status === 'closed';
@@ -122,6 +166,9 @@ function UpdateCard({ update, isOwner, onEdit, onClose, onReopen }) {
           </div>
         )}
       </div>
+
+      {/* Reactions */}
+      <ReactionBar updateId={update.id} initialReactions={update.reactions} />
     </div>
   );
 }
