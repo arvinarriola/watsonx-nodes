@@ -214,15 +214,24 @@ export default function ChatWidget() {
           {/* Quick suggestions */}
           {messages.length <= 1 && !loading && (
             <div style={{ padding: '0 12px 10px', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {['help', 'What am I subscribed to?', 'Search for nodes'].map(s => (
+              {[
+                { label: '🆘 Help',                  send: 'Help' },
+                { label: '📋 My subscriptions',      send: 'What am I subscribed to?' },
+                { label: '🔍 Search nodes',           send: 'Search for nodes' },
+                { label: '📣 Latest update',          send: 'Latest update on' },
+                { label: '📝 Post an update',         send: 'Post on' },
+                { label: '📊 Post performance',       send: 'How did my last post perform?' },
+                { label: '💡 Suggest a post',         send: 'Suggest what to post on' },
+                { label: '🚫 Unsubscribe',            send: 'Unsubscribe from' },
+              ].map(({ label, send }) => (
                 <button
-                  key={s}
-                  onClick={() => { setInput(s); setTimeout(() => inputRef.current?.focus(), 50); }}
-                  style={{ fontSize: 11, padding: '4px 10px', borderRadius: 99, background: 'rgba(79,126,248,0.1)', color: '#7da4fb', border: '1px solid rgba(79,126,248,0.2)', cursor: 'pointer', transition: 'all 0.15s' }}
-                  onMouseEnter={e => e.target.style.background = 'rgba(79,126,248,0.2)'}
-                  onMouseLeave={e => e.target.style.background = 'rgba(79,126,248,0.1)'}
+                  key={label}
+                  onClick={() => { setInput(send); setTimeout(() => inputRef.current?.focus(), 50); }}
+                  style={{ fontSize: 11, padding: '5px 11px', borderRadius: 99, background: 'rgba(79,126,248,0.1)', color: '#7da4fb', border: '1px solid rgba(79,126,248,0.2)', cursor: 'pointer', transition: 'all 0.15s', whiteSpace: 'nowrap' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(79,126,248,0.22)'; e.currentTarget.style.borderColor = 'rgba(79,126,248,0.45)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(79,126,248,0.1)'; e.currentTarget.style.borderColor = 'rgba(79,126,248,0.2)'; }}
                 >
-                  {s}
+                  {label}
                 </button>
               ))}
             </div>
